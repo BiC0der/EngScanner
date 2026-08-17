@@ -17,16 +17,16 @@ public struct ScanControlBar: View {
     }
     
     public var body: some View {
-        HStack(spacing: 16) {
-            // Reset / Cancel Button
+        HStack(spacing: 14) {
+            // Reset Button
             Button(action: {
                 engine.resetScan()
             }) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white.opacity(0.8))
-                    .frame(width: 50, height: 50)
-                    .background(Color(white: 0.18))
+                    .frame(width: 44, height: 44)
+                    .background(Color(white: 0.15).opacity(0.85))
                     .clipShape(Circle())
             }
             
@@ -45,49 +45,48 @@ public struct ScanControlBar: View {
             }) {
                 HStack(spacing: 8) {
                     Image(systemName: mainActionIcon)
-                        .font(.system(size: 20, weight: .black))
+                        .font(.system(size: 16, weight: .black))
                     Text(mainActionText)
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                 }
                 .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .padding(.horizontal, 24)
+                .frame(height: 44)
                 .background(mainActionColor)
                 .clipShape(Capsule())
-                .shadow(color: mainActionColor.opacity(0.4), radius: 8, x: 0, y: 4)
+                .shadow(color: mainActionColor.opacity(0.4), radius: 8, x: 0, y: 3)
             }
             
-            // Finish & Export Button
+            // Export Button
             Button(action: {
                 engine.completeScan()
                 onFinishScan()
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .bold))
-                    Text("Export")
+                    Image(systemName: "square.and.arrow.up.fill")
                         .font(.system(size: 14, weight: .bold))
+                    Text("Export")
+                        .font(.system(size: 13, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 16)
-                .frame(height: 50)
-                .background(Color.blue)
+                .frame(height: 44)
+                .background(Color.blue.opacity(0.9))
                 .clipShape(Capsule())
             }
             .disabled(engine.currentFloorPlan.walls.isEmpty && engine.scanState == .idle)
-            .opacity((engine.currentFloorPlan.walls.isEmpty && engine.scanState == .idle) ? 0.4 : 1.0)
+            .opacity((engine.currentFloorPlan.walls.isEmpty && engine.scanState == .idle) ? 0.35 : 1.0)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color(white: 0.10, opacity: 0.95))
+            Capsule()
+                .fill(Color(white: 0.08).opacity(0.80))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24)
+                    Capsule()
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
-        .padding(.horizontal, 16)
     }
     
     private var mainActionIcon: String {

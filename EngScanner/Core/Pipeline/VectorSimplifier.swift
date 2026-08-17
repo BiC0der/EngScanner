@@ -5,8 +5,8 @@
 //  Computational geometry pipeline for vectorizing structural point clouds:
 //  - Ramer-Douglas-Peucker (RDP) path simplification
 //  - Collinear segment fusion
-//  - Orthogonal 90° angle snapping
-//  - Vertex closure and snapping
+//  - Dominant-axis orthogonal 90° angle snapping
+//  - Corner intersection snapping
 //
 
 import Foundation
@@ -18,14 +18,14 @@ public final class VectorSimplifier {
         /// Ramer-Douglas-Peucker epsilon distance tolerance in meters (e.g. 0.04m = 4cm)
         public var rdpEpsilonMeters: Double = 0.04
         
-        /// Collinear angle tolerance in radians (e.g. 5 degrees)
-        public var collinearAngleToleranceRad: Double = 5.0 * (.pi / 180.0)
+        /// Collinear angle tolerance in radians (e.g. 8 degrees)
+        public var collinearAngleToleranceRad: Double = 8.0 * (.pi / 180.0)
         
-        /// Orthogonal snapping tolerance in radians (e.g. 6 degrees)
-        public var orthogonalSnapToleranceRad: Double = 6.0 * (.pi / 180.0)
+        /// Orthogonal snapping tolerance in radians (e.g. 12 degrees)
+        public var orthogonalSnapToleranceRad: Double = 12.0 * (.pi / 180.0)
         
-        /// Endpoint closure snap distance in meters (e.g. 0.06m = 6cm)
-        public var vertexSnapDistanceMeters: Double = 0.06
+        /// Endpoint closure snap distance in meters (e.g. 0.25m = 25cm)
+        public var vertexSnapDistanceMeters: Double = 0.25
         
         public init() {}
     }
@@ -38,7 +38,6 @@ public final class VectorSimplifier {
     
     // MARK: - Ramer-Douglas-Peucker (RDP) Algorithm
     
-    /// Reduces a dense polyline of 2D points into principal structural vertices
     public func simplifyRDP(points: [Vector2D], epsilon: Double? = nil) -> [Vector2D] {
         let eps = epsilon ?? params.rdpEpsilonMeters
         guard points.count >= 3 else { return points }
@@ -63,7 +62,6 @@ public final class VectorSimplifier {
             let recResults1 = simplifyRDP(points: leftSlice, epsilon: eps)
             let recResults2 = simplifyRDP(points: rightSlice, epsilon: eps)
             
-            // Combine slices without duplicating the middle vertex
             return Array(recResults1.dropLast()) + recResults2
         } else {
             return [first, last]
@@ -72,66 +70,68 @@ public final class VectorSimplifier {
     
     // MARK: - Collinear Wall Segment Fusion
     
-    /// Merges adjacent wall segments that are nearly collinear into single clean CAD vectors
     public func mergeCollinearWalls(_ walls: [WallSegment]) -> [WallSegment] {
         guard walls.count > 1 else { return walls }
         
         var merged: [WallSegment] = []
-        var current = walls[0]
+        var remaining = walls
         
-        for i in 1..<walls.count {
-            let next = walls[i]
+        while !remaining.isEmpty {
+            var current = remaining.removeFirst()
+            var i = 0
             
-            // Check if 'current' and 'next' share an endpoint (or are very close)
-            let areConnected = current.end.distance(to: next.start) <= params.vertexSnapDistanceMeters
-            
-            // Check if vectors have similar angle / direction
-            let angleDiff = abs(current.direction.angle(to: next.direction))
-            let isCollinear = angleDiff <= params.collinearAngleToleranceRad || abs(angleDiff - .pi) <= params.collinearAngleToleranceRad
-            
-            if areConnected && isCollinear {
-                // Merge into single elongated wall segment
-                let combinedOpenings = current.openings + next.openings.map { op in
-                    var offsetOp = op
-                    offsetOp.offsetFromStart += current.length
-                    return offsetOp
-                }
+            while i < remaining.count {
+                let candidate = remaining[i]
+                let angleDiff = abs(current.direction.angle(to: candidate.direction))
+                let isParallel = angleDiff <= params.collinearAngleToleranceRad || abs(angleDiff - .pi) <= params.collinearAngleToleranceRad
                 
-                current = WallSegment(
-                    id: current.id,
-                    start: current.start,
-                    end: next.end,
-                    thickness: (current.thickness + next.thickness) * 0.5,
-                    height: max(current.height, next.height),
-                    wallType: current.wallType,
-                    openings: combinedOpenings,
-                    confidence: (current.confidence + next.confidence) * 0.5
-                )
-            } else {
-                merged.append(current)
-                current = next
+                let distToCandidate = current.distanceToSegment(candidate)
+                
+                if isParallel && distToCandidate <= params.vertexSnapDistanceMeters {
+                    // Combine into single segment
+                    let axis = current.direction
+                    let p1 = 0.0
+                    let p2 = current.length
+                    let p3 = (candidate.start - current.start).dot(axis)
+                    let p4 = (candidate.end - current.start).dot(axis)
+                    
+                    let minProj = min(p1, p2, p3, p4)
+                    let maxProj = max(p1, p2, p3, p4)
+                    
+                    current.start = current.start + (axis * minProj)
+                    current.end = current.start + (axis * (maxProj - minProj))
+                    current.height = max(current.height, candidate.height)
+                    
+                    remaining.remove(at: i)
+                } else {
+                    i += 1
+                }
             }
+            
+            merged.append(current)
         }
         
-        merged.append(current)
         return merged
     }
     
-    // MARK: - Orthogonal 90° Angle Snapping
+    // MARK: - Dominant-Axis Orthogonal 90° Angle Snapping
     
-    /// Snaps nearly perpendicular walls (e.g. 86° - 94°) to exact 90° angles for architectural accuracy
-    public func snapOrthogonal(walls: [WallSegment], dominantAngleRad: Double = 0.0) -> [WallSegment] {
+    /// Finds dominant orientation angle (e.g. from longest wall) and snaps all walls to 0°, 90°, 180°, 270°
+    public func snapOrthogonal(walls: [WallSegment]) -> [WallSegment] {
+        guard let longestWall = walls.max(by: { $0.length < $1.length }) else { return walls }
+        let dominantAngle = (longestWall.end - longestWall.start).angle
+        
         return walls.map { wall in
             var snapped = wall
-            let angle = (wall.end - wall.start).angle
-            let relativeAngle = angle - dominantAngleRad
+            let currentAngle = (wall.end - wall.start).angle
+            let relativeAngle = currentAngle - dominantAngle
             
-            // Find nearest cardinal direction (0, π/2, π, 3π/2)
+            // Find closest right-angle quadrant (0, π/2, π, 3π/2)
             let quadrant = round(relativeAngle / (.pi / 2.0))
-            let targetAngle = dominantAngleRad + (quadrant * (.pi / 2.0))
+            let targetAngle = dominantAngle + (quadrant * (.pi / 2.0))
             
-            let angleDelta = abs(angle - targetAngle)
-            if angleDelta <= params.orthogonalSnapToleranceRad {
+            let angleDelta = abs(currentAngle - targetAngle)
+            if angleDelta <= params.orthogonalSnapToleranceRad || abs(angleDelta - 2 * .pi) <= params.orthogonalSnapToleranceRad {
                 let length = wall.length
                 let dir = Vector2D(x: cos(targetAngle), y: sin(targetAngle))
                 snapped.end = snapped.start + (dir * length)
@@ -141,26 +141,64 @@ public final class VectorSimplifier {
         }
     }
     
-    // MARK: - Corner Vertex Snapping & Loop Closure
+    // MARK: - Corner Intersection Snapping
     
-    /// Snaps adjacent wall endpoints together if they are within tolerance to close the floor plan polygon
-    public func snapVerticesAndCloseLoop(_ walls: [WallSegment]) -> [WallSegment] {
-        guard walls.count >= 3 else { return walls }
+    /// Snaps adjacent corner walls together so room corners form clean CAD joints
+    public func snapCornerIntersections(_ walls: [WallSegment]) -> [WallSegment] {
+        guard walls.count >= 2 else { return walls }
         var result = walls
         
         for i in 0..<result.count {
-            let nextIndex = (i + 1) % result.count
-            let pEnd = result[i].end
-            let pNextStart = result[nextIndex].start
-            
-            if pEnd.distance(to: pNextStart) <= params.vertexSnapDistanceMeters {
-                // Snap to mid-point average
-                let mid = (pEnd + pNextStart) * 0.5
-                result[i].end = mid
-                result[nextIndex].start = mid
+            for j in (i + 1)..<result.count {
+                let w1 = result[i]
+                let w2 = result[j]
+                
+                // If angle is roughly perpendicular (between 60° and 120°)
+                let angleBetween = abs(w1.direction.angle(to: w2.direction))
+                let isPerpendicular = (angleBetween >= .pi / 3.0 && angleBetween <= 2.0 * .pi / 3.0)
+                guard isPerpendicular else { continue }
+                
+                // Check if any endpoints are close to each other
+                let pairs: [(p1: Vector2D, p2: Vector2D, isStart1: Bool, isStart2: Bool)] = [
+                    (w1.end, w2.start, false, true),
+                    (w1.start, w2.end, true, false),
+                    (w1.end, w2.end, false, false),
+                    (w1.start, w2.start, true, true)
+                ]
+                
+                for pair in pairs {
+                    if pair.p1.distance(to: pair.p2) <= params.vertexSnapDistanceMeters {
+                        // Calculate exact mathematical line intersection
+                        if let intersection = lineIntersection(p1: w1.start, p2: w1.end, p3: w2.start, p4: w2.end) {
+                            if pair.isStart1 { result[i].start = intersection } else { result[i].end = intersection }
+                            if pair.isStart2 { result[j].start = intersection } else { result[j].end = intersection }
+                        }
+                    }
+                }
             }
         }
         
         return result
+    }
+    
+    private func lineIntersection(p1: Vector2D, p2: Vector2D, p3: Vector2D, p4: Vector2D) -> Vector2D? {
+        let denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x)
+        guard abs(denom) > 0.0001 else { return nil }
+        
+        let t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom
+        return Vector2D(
+            x: p1.x + t * (p2.x - p1.x),
+            y: p1.y + t * (p2.y - p1.y)
+        )
+    }
+}
+
+private extension WallSegment {
+    func distanceToSegment(_ other: WallSegment) -> Double {
+        let d1 = other.start.distanceToSegment(p1: self.start, p2: self.end)
+        let d2 = other.end.distanceToSegment(p1: self.start, p2: self.end)
+        let d3 = self.start.distanceToSegment(p1: other.start, p2: other.end)
+        let d4 = self.end.distanceToSegment(p1: other.start, p2: other.end)
+        return min(min(d1, d2), min(d3, d4))
     }
 }

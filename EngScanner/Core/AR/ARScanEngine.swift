@@ -37,6 +37,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
     public let arSession = ARSession()
     private let structuralFilter = StructuralFilter()
     private let vectorSimplifier = VectorSimplifier()
+    private let wallTracker = PersistentWallTracker()
     
     // Processing queue for background geometry analysis
     private let processingQueue = DispatchQueue(label: "com.engscanner.geometry-processing", qos: .userInitiated)
@@ -56,10 +57,8 @@ public final class ARScanEngine: NSObject, ObservableObject {
     
     // MARK: - ARSession Lifecycle
     
-    /// Starts the LiDAR-based structural scanning session
     public func startScan() {
         guard isLiDARAvailable else {
-            print("[ARScanEngine] Warning: Device does not support LiDAR Scene Reconstruction (.meshWithClassification)")
             startFallbackScan()
             return
         }
@@ -73,16 +72,17 @@ public final class ARScanEngine: NSObject, ObservableObject {
             configuration.frameSemantics.insert(.smoothedSceneDepth)
         }
         
+        wallTracker.reset()
         currentFloorPlan = StructuralFloorPlan(projectName: "Site Survey", scanDate: Date())
         scanState = .scanning
         
         arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
     
-    /// Fallback scan mode for non-LiDAR development devices
     private func startFallbackScan() {
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
+        wallTracker.reset()
         scanState = .scanning
         arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
@@ -102,6 +102,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
     
     public func resetScan() {
         scanState = .idle
+        wallTracker.reset()
         currentFloorPlan = StructuralFloorPlan()
         userCameraPosition = .zero
         userCameraHeadingDeg = 0.0
@@ -111,11 +112,11 @@ public final class ARScanEngine: NSObject, ObservableObject {
     public func completeScan() {
         scanState = .completed
         
-        // Final optimization pass on vectors
+        // Final CAD Rectification Pass
         var finalizedWalls = currentFloorPlan.walls
         finalizedWalls = vectorSimplifier.mergeCollinearWalls(finalizedWalls)
         finalizedWalls = vectorSimplifier.snapOrthogonal(walls: finalizedWalls)
-        finalizedWalls = vectorSimplifier.snapVerticesAndCloseLoop(finalizedWalls)
+        finalizedWalls = vectorSimplifier.snapCornerIntersections(finalizedWalls)
         
         currentFloorPlan.walls = finalizedWalls
     }
@@ -137,22 +138,13 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 }
             }
             
-            var extractedPoints: [SIMD3<Float>] = []
-            
-            // 1. Process LiDAR classified mesh anchors (Walls only)
-            for meshAnchor in meshAnchors {
-                let structuralVertices = self.structuralFilter.extractStructuralVertices(from: meshAnchor)
-                extractedPoints.append(contentsOf: structuralVertices)
-            }
-            
-            // 2. Process vertical plane anchors (Walls)
-            var planeWalls: [WallSegment] = []
+            // 1. Extract Candidate Wall Segments from Vertical Planes
+            var candidateWalls: [WallSegment] = []
             for plane in planeAnchors where plane.alignment == .vertical {
                 let center = plane.center
                 let extent = plane.extent
                 let transform = plane.transform
                 
-                // Construct 2D line segment representing plane extent in metric floor space
                 let halfWidth = Double(extent.x) * 0.5
                 let localP1 = SIMD4<Float>(center.x - Float(halfWidth), center.y, center.z, 1.0)
                 let localP2 = SIMD4<Float>(center.x + Float(halfWidth), center.y, center.z, 1.0)
@@ -163,6 +155,8 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 let start2D = Vector2D(x: Double(worldP1.x), y: Double(-worldP1.z))
                 let end2D = Vector2D(x: Double(worldP2.x), y: Double(-worldP2.z))
                 
+                guard start2D.distance(to: end2D) >= 0.3 else { continue }
+                
                 let wall = WallSegment(
                     start: start2D,
                     end: end2D,
@@ -171,18 +165,21 @@ public final class ARScanEngine: NSObject, ObservableObject {
                     wallType: .interior,
                     confidence: 0.95
                 )
-                planeWalls.append(wall)
+                candidateWalls.append(wall)
             }
             
-            // 3. Vectorize and simplify structural geometry
-            let simplifiedWalls = self.vectorSimplifier.mergeCollinearWalls(planeWalls)
-            let filteredWalls = self.structuralFilter.filterStructuralWalls(simplifiedWalls)
+            // 2. Intelligent Spatial Deduplication & Tracking (Eliminates Stacked Lines)
+            let fusedWalls = self.wallTracker.ingestCandidateWalls(candidateWalls)
+            
+            // 3. Orthogonal & Corner Snapping
+            var cleanWalls = self.vectorSimplifier.snapOrthogonal(walls: fusedWalls)
+            cleanWalls = self.vectorSimplifier.snapCornerIntersections(cleanWalls)
             
             Task { @MainActor in
                 self.trackedMeshAnchorCount = meshAnchors.count
-                if !filteredWalls.isEmpty {
-                    self.currentFloorPlan.walls = filteredWalls
-                    self.confidenceScore = min(1.0, Double(meshAnchors.count) * 0.1)
+                if !cleanWalls.isEmpty {
+                    self.currentFloorPlan.walls = cleanWalls
+                    self.confidenceScore = min(1.0, Double(cleanWalls.count) * 0.25)
                 }
             }
         }
