@@ -1,0 +1,42 @@
+# Fastlane Configuration for EngScanner
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and package unsigned / development IPA for testing"
+  lane :build_dev_ipa do
+    build_app(
+      scheme: "EngScanner",
+      export_method: "development",
+      output_directory: "./build/output",
+      output_name: "EngScanner-Dev.ipa",
+      clean: true,
+      skip_profile_detection: true,
+      export_options: {
+        compileBitcode: false,
+        signingStyle: "manual"
+      }
+    )
+  end
+
+  desc "Build Ad-Hoc / Enterprise Signed IPA using Fastlane Match / API Key"
+  lane :build_signed_ipa do |options|
+    # Optional: fetch profiles via match if configured
+    # match(type: "adhoc", readonly: true)
+    
+    build_app(
+      scheme: "EngScanner",
+      export_method: options[:export_method] || "ad-hoc",
+      output_directory: "./build/output",
+      output_name: "EngScanner-Release.ipa",
+      clean: true
+    )
+  end
+
+  desc "Upload IPA directly to TestFlight"
+  lane :beta do
+    build_signed_ipa(export_method: "app-store")
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

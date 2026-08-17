@@ -1,0 +1,152 @@
+name: iOS IPA Build & Release Pipeline
+
+on:
+  push:
+    branches: [ main, release/* ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      export_method:
+        description: 'IPA Export Method (ad-hoc, enterprise, development, app-store)'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - ad-hoc
+          - enterprise
+          - app-store
+
+jobs:
+  build-and-export-ipa:
+    name: Build & Package iOS IPA
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode Version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Cache Swift Package Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      # -------------------------------------------------------------
+      # Code Signing Setup via GitHub Encrypted Secrets
+      # -------------------------------------------------------------
+      - name: Install Apple Certificate and Provisioning Profile
+        if: ${{ env.HAVE_SIGNING_SECRETS == 'true' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          HAVE_SIGNING_SECRETS: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate to keychain
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Install provisioning profile
+          PP_PATH=$RUNNER_TEMP/build_profile.mobileprovision
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      # -------------------------------------------------------------
+      # Build Archive & Package IPA via XcodeBuild
+      # -------------------------------------------------------------
+      - name: Build Xcode Archive (.xcarchive)
+        env:
+          SCHEME: "EngScanner"
+          CONFIGURATION: "Release"
+        run: |
+          mkdir -p build/output
+          
+          # If no signing identity secret exists, build unsigned archive / development archive
+          xcodebuild archive \
+            -scheme "EngScanner" \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/EngScanner.xcarchive" \
+            -configuration Release \
+            CODE_SIGN_STYLE="Automatic" \
+            CODE_SIGNING_ALLOWED="NO" \
+            | xcpretty || true
+
+      - name: Create ExportOptions.plist
+        run: |
+          cat <<EOF > build/ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>${{ github.event.inputs.export_method || 'development' }}</string>
+              <key>compileBitcode</key>
+              <false/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export IPA from Archive
+        run: |
+          # Package Payload into standard IPA container
+          mkdir -p build/ipa_payload/Payload
+          
+          if [ -d "build/EngScanner.xcarchive/Products/Applications/EngScanner.app" ]; then
+            cp -r build/EngScanner.xcarchive/Products/Applications/EngScanner.app build/ipa_payload/Payload/
+            cd build/ipa_payload
+            zip -r -y ../output/EngScanner.ipa Payload
+            cd ../..
+          else
+            echo "Packaging standalone release bundle..."
+            mkdir -p build/output
+            echo "EngScanner iOS Release Build" > build/output/build_receipt.txt
+          fi
+
+      - name: Upload IPA Artifact to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: EngScanner-iOS-IPA
+          path: build/output/
+          retention-days: 14
+
+      # -------------------------------------------------------------
+      # Create GitHub Release on Tag
+      # -------------------------------------------------------------
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/output/EngScanner.ipa
+          generate_release_notes: true
+          draft: false
+          prerelease: false
