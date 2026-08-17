@@ -2,10 +2,59 @@
 //  MetricDimensionLabel.swift
 //  EngScanner
 //
-//  Minimalist, elegant metric HUD widgets for CAD room scanning.
+//  Metric HUD components and minimalist widgets for CAD room scanning.
 //
 
 import SwiftUI
+
+public struct MetricDimensionBadge: View {
+    public let value: Double
+    public let unit: String
+    public let label: String
+    public let iconName: String
+    
+    public init(value: Double, unit: String = "m", label: String, iconName: String) {
+        self.value = value
+        self.unit = unit
+        self.label = label
+        self.iconName = iconName
+    }
+    
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: iconName)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.cyan)
+                Text(label.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(String(format: "%.2f", value))
+                    .font(.system(size: 15, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(unit)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.cyan)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(white: 0.12).opacity(0.90))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+}
 
 public struct CompactMetricIsland: View {
     public let plan: StructuralFloorPlan
@@ -18,7 +67,6 @@ public struct CompactMetricIsland: View {
     
     public var body: some View {
         HStack(spacing: 12) {
-            // Area Metric
             HStack(spacing: 4) {
                 Image(systemName: "square.dashed")
                     .font(.system(size: 11, weight: .bold))
@@ -32,7 +80,6 @@ public struct CompactMetricIsland: View {
                 .fill(Color.white.opacity(0.3))
                 .frame(width: 3, height: 3)
             
-            // Perimeter Metric
             HStack(spacing: 4) {
                 Image(systemName: "ruler")
                     .font(.system(size: 11, weight: .bold))
@@ -46,7 +93,6 @@ public struct CompactMetricIsland: View {
                 .fill(Color.white.opacity(0.3))
                 .frame(width: 3, height: 3)
             
-            // Wall Count
             HStack(spacing: 4) {
                 Image(systemName: "square.3.layers.3d")
                     .font(.system(size: 11, weight: .bold))

@@ -54,6 +54,18 @@ public struct Vector2D: Equatable, Hashable, Codable {
         return Vector2D(x: lhs.x * scalar, y: lhs.y * scalar)
     }
     
+    public static func * (scalar: Double, rhs: Vector2D) -> Vector2D {
+        return Vector2D(x: rhs.x * scalar, y: rhs.y * scalar)
+    }
+    
+    public static func * (lhs: Vector2D, scalar: Int) -> Vector2D {
+        return Vector2D(x: lhs.x * Double(scalar), y: lhs.y * Double(scalar))
+    }
+    
+    public static func * (scalar: Int, rhs: Vector2D) -> Vector2D {
+        return Vector2D(x: rhs.x * Double(scalar), y: rhs.y * Double(scalar))
+    }
+    
     public static func / (lhs: Vector2D, scalar: Double) -> Vector2D {
         guard scalar != 0 else { return .zero }
         return Vector2D(x: lhs.x / scalar, y: lhs.y / scalar)

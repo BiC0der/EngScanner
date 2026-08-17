@@ -80,8 +80,8 @@ public final class PersistentWallTracker {
             guard isParallel else { continue }
             
             // 2. Perpendicular Distance Check: How far is candidate from the infinite line of the existing wall?
-            let distStart = candidate.start.distanceToSegment(p1: existing.start - existing.direction * 10, p2: existing.end + existing.direction * 10)
-            let distEnd = candidate.end.distanceToSegment(p1: existing.start - existing.direction * 10, p2: existing.end + existing.direction * 10)
+            let distStart = candidate.start.distanceToSegment(p1: existing.start - existing.direction * 10.0, p2: existing.end + existing.direction * 10.0)
+            let distEnd = candidate.end.distanceToSegment(p1: existing.start - existing.direction * 10.0, p2: existing.end + existing.direction * 10.0)
             let perpDist = (distStart + distEnd) * 0.5
             guard perpDist <= config.maxCoplanarDistanceMeters else { continue }
             
