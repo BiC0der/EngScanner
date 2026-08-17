@@ -4,6 +4,8 @@ options:
   deploymentTarget:
     iOS: "16.0"
   xcodeVersion: "15.4"
+  projectVersion: 56
+  defaultConfig: Release
 
 settings:
   base:
