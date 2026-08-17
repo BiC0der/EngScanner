@@ -1,0 +1,47 @@
+name: EngScanner
+options:
+  bundleIdPrefix: com.bic0der
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.4"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_BITCODE: NO
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_MODULES: YES
+    SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+targets:
+  EngScanner:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: EngScanner
+    info:
+      path: EngScanner/App/Info.plist
+      properties:
+        CFBundleDisplayName: EngScanner
+        CFBundleIdentifier: com.bic0der.EngScanner
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        NSCameraUsageDescription: "EngScanner requires camera and LiDAR access for real-time high-precision structural room scanning and 2D CAD floor plan generation."
+        UIRequiredDeviceCapabilities:
+          - arm64
+          - arkit
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bic0der.EngScanner
+        INFOPLIST_FILE: EngScanner/App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        AD_HOC_CODE_SIGNING_ALLOWED: YES
