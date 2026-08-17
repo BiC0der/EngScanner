@@ -141,9 +141,6 @@ public struct ExportSummaryView: View {
                     .background(Color(white: 0.18))
                     .cornerRadius(8)
                     .foregroundColor(.white)
-                    .onChange(of: projectName) { val in
-                        floorPlan.projectName = val
-                    }
             }
             
             VStack(alignment: .leading, spacing: 6) {
@@ -156,9 +153,6 @@ public struct ExportSummaryView: View {
                     .background(Color(white: 0.18))
                     .cornerRadius(8)
                     .foregroundColor(.white)
-                    .onChange(of: engineerName) { val in
-                        floorPlan.engineerName = val
-                    }
             }
         }
         .padding(16)

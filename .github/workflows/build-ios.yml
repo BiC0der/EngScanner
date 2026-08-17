@@ -31,12 +31,16 @@ jobs:
 
       - name: Setup Xcode Environment
         run: |
-          # Use latest available Xcode on macOS runner
-          if [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_15.4.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          echo "Available Xcode installations on runner:"
+          ls -d /Applications/Xcode*.app || true
+          
+          # Automatically select highest installed Xcode version
+          LATEST_XCODE=$(find /Applications -maxdepth 1 -name "Xcode*.app" | sort -V | tail -n 1)
+          if [ -n "$LATEST_XCODE" ]; then
+            echo "Selecting: $LATEST_XCODE"
+            sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
           fi
+          
           xcodebuild -version
 
       - name: Install XcodeGen
@@ -46,6 +50,13 @@ jobs:
       - name: Generate Xcode Project (.xcodeproj)
         run: |
           xcodegen generate --spec project.yml
+          
+          # Ensure project.pbxproj is compatible with both Xcode 15 and 16
+          if [ -f "EngScanner.xcodeproj/project.pbxproj" ]; then
+            sed -i '' 's/objectVersion = 77;/objectVersion = 56;/g' EngScanner.xcodeproj/project.pbxproj || true
+            sed -i '' 's/compatibilityVersion = "Xcode 16.0";/compatibilityVersion = "Xcode 15.0";/g' EngScanner.xcodeproj/project.pbxproj || true
+          fi
+          
           ls -la EngScanner.xcodeproj
 
       # -------------------------------------------------------------
