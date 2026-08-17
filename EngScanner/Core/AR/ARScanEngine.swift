@@ -36,6 +36,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
     
     public let arSession = ARSession()
     private let structuralFilter = StructuralFilter()
+    private let meshWallExtractor = MeshWallExtractor()
     private let vectorSimplifier = VectorSimplifier()
     private let wallTracker = PersistentWallTracker()
     
@@ -139,15 +140,26 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 }
             }
             
-            // 1. Extract Candidate Wall Segments from Vertical Planes (filter out small surfaces)
             var candidateWalls: [WallSegment] = []
+            
+            // 1. Process LiDAR Classified Mesh Anchors (.wall vertices)
+            var allStructural3DPoints: [SIMD3<Float>] = []
+            for meshAnchor in meshAnchors {
+                let structuralVertices = self.structuralFilter.extractStructuralVertices(from: meshAnchor)
+                allStructural3DPoints.append(contentsOf: structuralVertices)
+            }
+            
+            if !allStructural3DPoints.isEmpty {
+                let points2D = self.structuralFilter.projectTo2DPlane(points: allStructural3DPoints)
+                let meshWalls = self.meshWallExtractor.extractWalls(from: points2D)
+                candidateWalls.append(contentsOf: meshWalls)
+            }
+            
+            // 2. Process Vertical Plane Anchors
             for plane in planeAnchors where plane.alignment == .vertical {
                 let center = plane.center
                 let extent = plane.extent
                 let transform = plane.transform
-                
-                // Reject small planes (furniture, small cabinets, tables)
-                guard extent.x >= 0.50 && extent.y >= 1.20 else { continue }
                 
                 let halfWidth = Double(extent.x) * 0.5
                 let localP1 = SIMD4<Float>(center.x - Float(halfWidth), center.y, center.z, 1.0)
@@ -159,7 +171,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 let start2D = Vector2D(x: Double(worldP1.x), y: Double(-worldP1.z))
                 let end2D = Vector2D(x: Double(worldP2.x), y: Double(-worldP2.z))
                 
-                guard start2D.distance(to: end2D) >= 0.4 else { continue }
+                guard start2D.distance(to: end2D) >= 0.25 else { continue }
                 
                 let wall = WallSegment(
                     start: start2D,
@@ -167,15 +179,17 @@ public final class ARScanEngine: NSObject, ObservableObject {
                     thickness: 0.15,
                     height: Double(extent.y),
                     wallType: .interior,
-                    confidence: 0.95
+                    confidence: 0.90
                 )
                 candidateWalls.append(wall)
             }
             
-            // 2. Intelligent Spatial Deduplication & Outermost Structural Filtering
+            guard !candidateWalls.isEmpty else { return }
+            
+            // 3. Ingest into Persistent Tracker (Fuses collinear walls & eliminates clutter)
             let fusedWalls = self.wallTracker.ingestCandidateWalls(candidateWalls, userPosition: currentPos)
             
-            // 3. Orthogonal Snapping to Rectangular Axes
+            // 4. Snap to clean orthogonal room angles
             var cleanWalls = self.vectorSimplifier.snapOrthogonal(walls: fusedWalls)
             cleanWalls = self.vectorSimplifier.snapCornerIntersections(cleanWalls)
             
