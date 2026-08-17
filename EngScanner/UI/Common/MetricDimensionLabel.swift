@@ -21,31 +21,35 @@ public struct MetricDimensionBadge: View {
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Image(systemName: iconName)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.cyan)
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(String(format: "%.2f", value))
-                    .font(.system(size: 17, weight: .heavy, design: .monospaced))
+                    .font(.system(size: 15, weight: .black, design: .monospaced))
                     .foregroundColor(.white)
+                    .lineLimit(1)
                 Text(unit)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.cyan)
+                    .lineLimit(1)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(white: 0.12, opacity: 0.85))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(white: 0.12).opacity(0.90))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.white.opacity(0.15), lineWidth: 1)
                 )
         )
@@ -84,9 +88,10 @@ public struct MetricLiveHUD: View {
             MetricDimensionBadge(
                 value: Double(wallCount),
                 unit: "walls",
-                label: "Count",
+                label: "Walls",
                 iconName: "square.3.layers.3d"
             )
         }
+        .frame(maxWidth: .infinity)
     }
 }

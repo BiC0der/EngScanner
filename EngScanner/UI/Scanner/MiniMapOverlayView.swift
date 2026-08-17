@@ -14,7 +14,7 @@ public struct MiniMapOverlayView: View {
     public let userPosition: Vector2D
     public let userHeadingDeg: Double
     
-    @State private var scale: CGFloat = 35.0 // Pixels per meter
+    @State private var scale: CGFloat = 30.0 // Pixels per meter
     @State private var offset: CGSize = .zero
     @State private var isExpanded: Bool = false
     
@@ -43,68 +43,54 @@ public struct MiniMapOverlayView: View {
                 drawUserPosition(context: context, center: center)
             }
             .background(Color(white: 0.08).opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.cyan.opacity(0.4), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.cyan.opacity(0.5), lineWidth: 1.5)
             )
             .gesture(
                 MagnificationGesture()
                     .onChanged { value in
-                        scale = max(15.0, min(80.0, 35.0 * value))
+                        scale = max(15.0, min(70.0, 30.0 * value))
                     }
             )
             
-            // Header Controls & Legend
-            HStack {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 8, height: 8)
-                    Text("LIVE 2D CAD (METERS)")
-                        .font(.system(size: 10, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(6)
+            // Header Mini Legend & Expand/Reset Controls
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+                Text("2D CAD")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
                 
                 Spacer()
                 
-                // Reset View Button
                 Button(action: {
                     withAnimation(.spring()) {
-                        offset = .zero
-                        scale = 35.0
+                        isExpanded.toggle()
                     }
                 }) {
-                    Image(systemName: "scope")
-                        .font(.system(size: 12, weight: .bold))
+                    Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.cyan)
-                        .frame(width: 28, height: 28)
+                        .padding(4)
                         .background(Color.black.opacity(0.6))
                         .clipShape(Circle())
                 }
             }
-            .padding(10)
+            .padding(6)
         }
-        .frame(width: isExpanded ? 340 : 220, height: isExpanded ? 340 : 220)
-        .shadow(color: .black.opacity(0.6), radius: 10, x: 0, y: 4)
-        .onTapGesture(count: 2) {
-            withAnimation(.spring()) {
-                isExpanded.toggle()
-            }
-        }
+        .frame(width: isExpanded ? 280 : 150, height: isExpanded ? 280 : 150)
+        .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
     }
     
     // MARK: - Canvas Drawing Routines
     
     private func toScreenPoint(vec: Vector2D, center: CGPoint) -> CGPoint {
-        // Map meter coordinates into screen space
         return CGPoint(
             x: center.x + CGFloat(vec.x) * scale,
-            y: center.y - CGFloat(vec.y) * scale // Invert Y for screen coordinates
+            y: center.y - CGFloat(vec.y) * scale
         )
     }
     
@@ -129,7 +115,7 @@ public struct MiniMapOverlayView: View {
             y += gridSizePx
         }
         
-        context.stroke(gridPath, with: .color(Color.white.opacity(0.08)), lineWidth: 0.8)
+        context.stroke(gridPath, with: .color(Color.white.opacity(0.10)), lineWidth: 0.8)
     }
     
     private func drawWalls(context: GraphicsContext, center: CGPoint) {
@@ -137,15 +123,13 @@ public struct MiniMapOverlayView: View {
             let p1 = toScreenPoint(vec: wall.start, center: center)
             let p2 = toScreenPoint(vec: wall.end, center: center)
             
-            // Draw wall core line
             var wallPath = Path()
             wallPath.move(to: p1)
             wallPath.addLine(to: p2)
             
             let wallColor = (wall.wallType == .exterior) ? Color.white : Color.yellow
-            context.stroke(wallPath, with: .color(wallColor), style: StrokeStyle(lineWidth: 3.5, lineCap: .square))
+            context.stroke(wallPath, with: .color(wallColor), style: StrokeStyle(lineWidth: 3.0, lineCap: .square))
             
-            // Draw openings (doors / windows)
             for opening in wall.openings {
                 let coords = wall.worldCoordinates(for: opening)
                 let opP1 = toScreenPoint(vec: coords.start, center: center)
@@ -156,19 +140,20 @@ public struct MiniMapOverlayView: View {
                 opPath.addLine(to: opP2)
                 
                 let opColor = (opening.type == .door) ? Color.cyan : Color.green
-                context.stroke(opPath, with: .color(opColor), lineWidth: 4.5)
+                context.stroke(opPath, with: .color(opColor), lineWidth: 4.0)
             }
         }
     }
     
     private func drawDimensions(context: GraphicsContext, center: CGPoint) {
+        guard isExpanded else { return }
         for wall in floorPlan.walls where wall.length >= 0.4 {
             let mid = wall.midpoint + (wall.normal * 0.22)
             let screenMid = toScreenPoint(vec: mid, center: center)
             
             let dimString = "\(String(format: "%.2f", wall.length))m"
             let text = Text(dimString)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
                 .foregroundColor(.cyan)
             
             context.draw(context.resolve(text), at: screenMid, anchor: .center)
@@ -178,12 +163,11 @@ public struct MiniMapOverlayView: View {
     private func drawUserPosition(context: GraphicsContext, center: CGPoint) {
         let userPt = toScreenPoint(vec: userPosition, center: center)
         
-        // 1. Heading Field of View Cone
         var conePath = Path()
         conePath.move(to: userPt)
         let headingRad = -userHeadingDeg * (.pi / 180.0) + (.pi / 2.0)
-        let coneSpread: Double = .pi / 4.0 // 45 degree FOV
-        let coneLengthPx: CGFloat = 30.0
+        let coneSpread: Double = .pi / 4.0
+        let coneLengthPx: CGFloat = 24.0
         
         let leftAngle = headingRad - (coneSpread / 2.0)
         let rightAngle = headingRad + (coneSpread / 2.0)
@@ -201,11 +185,10 @@ public struct MiniMapOverlayView: View {
         conePath.addLine(to: rightPt)
         conePath.closeSubpath()
         
-        context.fill(conePath, with: .color(Color.cyan.opacity(0.25)))
+        context.fill(conePath, with: .color(Color.cyan.opacity(0.30)))
         
-        // 2. User Center Dot
-        let dotRect = CGRect(x: userPt.x - 5, y: userPt.y - 5, width: 10, height: 10)
+        let dotRect = CGRect(x: userPt.x - 4, y: userPt.y - 4, width: 8, height: 8)
         context.fill(Path(ellipseIn: dotRect), with: .color(.cyan))
-        context.stroke(Path(ellipseIn: dotRect), with: .color(.white), lineWidth: 1.5)
+        context.stroke(Path(ellipseIn: dotRect), with: .color(.white), lineWidth: 1.2)
     }
 }

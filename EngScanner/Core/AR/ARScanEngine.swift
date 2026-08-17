@@ -41,7 +41,6 @@ public final class ARScanEngine: NSObject, ObservableObject {
     // Processing queue for background geometry analysis
     private let processingQueue = DispatchQueue(label: "com.engscanner.geometry-processing", qos: .userInitiated)
     private var isProcessingFrame = false
-    private var rawStructuralPoints: [SIMD3<Float>] = []
     
     public override init() {
         super.init()
@@ -74,7 +73,6 @@ public final class ARScanEngine: NSObject, ObservableObject {
             configuration.frameSemantics.insert(.smoothedSceneDepth)
         }
         
-        rawStructuralPoints.removeAll()
         currentFloorPlan = StructuralFloorPlan(projectName: "Site Survey", scanDate: Date())
         scanState = .scanning
         
@@ -104,7 +102,6 @@ public final class ARScanEngine: NSObject, ObservableObject {
     
     public func resetScan() {
         scanState = .idle
-        rawStructuralPoints.removeAll()
         currentFloorPlan = StructuralFloorPlan()
         userCameraPosition = .zero
         userCameraHeadingDeg = 0.0
@@ -197,18 +194,21 @@ public final class ARScanEngine: NSObject, ObservableObject {
 extension ARScanEngine: ARSessionDelegate {
     
     public func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        // Update user camera position and heading for live mini-map
         let cameraTransform = frame.camera.transform
         let camX = cameraTransform.columns.3.x
         let camZ = cameraTransform.columns.3.z
-        userCameraPosition = Vector2D(x: Double(camX), y: Double(-camZ))
+        let pos = Vector2D(x: Double(camX), y: Double(-camZ))
         
-        // Compute yaw angle in degrees
         let forwardVector = cameraTransform.columns.2
         let yawRad = atan2(-forwardVector.x, -forwardVector.z)
-        userCameraHeadingDeg = Double(yawRad * (180.0 / .pi))
+        let headingDeg = Double(yawRad * (180.0 / .pi))
         
-        // Trigger structural geometry extraction
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            self.userCameraPosition = pos
+            self.userCameraHeadingDeg = headingDeg
+        }
+        
         processAnchorsAsync(frame.anchors)
     }
     

@@ -3,7 +3,7 @@
 //  EngScanner
 //
 //  Primary LiDAR scanning workspace.
-//  Hosts the RealityKit AR viewport, live 2D mini-map, HUD metric gauges,
+//  Hosts the RealityKit AR viewport, live 2D mini-map, full-width HUD metric gauges,
 //  and scan controls.
 //
 
@@ -17,13 +17,13 @@ public struct ScannerContainerView: View {
     
     public var body: some View {
         ZStack {
-            // 1. AR RealityKit Background Camera Feed
+            // 1. AR RealityKit Full-Screen Background Feed (Fills screen completely)
             ARViewContainer(engine: engine)
-                .ignoresSafeArea()
+                .edgesIgnoringSafeArea(.all)
             
-            // 2. Main Scanning Interface Overlay
-            VStack {
-                // Top Engineering HUD Bar
+            // 2. Main Scanning HUD Overlay
+            VStack(spacing: 12) {
+                // Top Navigation & Status Bar
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         // LiDAR Hardware Status
@@ -31,25 +31,30 @@ public struct ScannerContainerView: View {
                             Circle()
                                 .fill(engine.isLiDARAvailable ? Color.green : Color.orange)
                                 .frame(width: 8, height: 8)
-                            Text(engine.isLiDARAvailable ? "LiDAR ACTIVE (0.01m RES)" : "OPTICAL FALLBACK (NON-LIDAR)")
+                            Text(engine.isLiDARAvailable ? "LiDAR ACTIVE (0.01m RES)" : "OPTICAL FALLBACK")
                                 .font(.system(size: 10, weight: .heavy, design: .monospaced))
                                 .foregroundColor(.white)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.7))
-                        .cornerRadius(6)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.75))
+                        .cornerRadius(8)
                         
-                        // Live Dimension HUD
-                        MetricLiveHUD(
-                            plan: engine.currentFloorPlan,
-                            wallCount: engine.currentFloorPlan.walls.count
-                        )
+                        // Confidence & Anchor Count
+                        if engine.scanState == .scanning {
+                            Text("ANCHORS: \(engine.trackedMeshAnchorCount) | CONF: \(Int(engine.confidenceScore * 100))%")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(.cyan)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.black.opacity(0.60))
+                                .cornerRadius(6)
+                        }
                     }
                     
                     Spacer()
                     
-                    // Live 2D Floor Plan Mini-Map Overlay
+                    // Floating 2D Floor Plan Mini-Map
                     MiniMapOverlayView(
                         floorPlan: engine.currentFloorPlan,
                         userPosition: engine.userCameraPosition,
@@ -57,11 +62,18 @@ public struct ScannerContainerView: View {
                     )
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, 8)
+                
+                // Full-Width Live Metric Dimension HUD (Spans entire screen width)
+                MetricLiveHUD(
+                    plan: engine.currentFloorPlan,
+                    wallCount: engine.currentFloorPlan.walls.count
+                )
+                .padding(.horizontal, 16)
                 
                 Spacer()
                 
-                // Guidance Prompts
+                // Real-time Scanning Guidance Tip
                 if engine.scanState == .scanning {
                     scanningGuidanceChip
                 }
@@ -70,7 +82,7 @@ public struct ScannerContainerView: View {
                 ScanControlBar(engine: engine) {
                     showingExportSummary = true
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 12)
             }
         }
         .sheet(isPresented: $showingExportSummary) {
@@ -98,10 +110,10 @@ public struct ScannerContainerView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.white)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.75))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.80))
         .cornerRadius(12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
     }
 }
