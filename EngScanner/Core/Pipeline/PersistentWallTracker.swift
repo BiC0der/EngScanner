@@ -2,9 +2,9 @@
 //  PersistentWallTracker.swift
 //  EngScanner
 //
-//  Intelligent spatial tracking and deduplication engine.
-//  Merges overlapping planes, eliminates duplicate stacked lines,
-//  and produces clean, continuous architectural walls.
+//  Intelligent structural spatial tracking, furniture filtering, and CAD unification engine.
+//  Filters out wardrobe doors, beds, cabinets, and inner clutter planes.
+//  Merges overlapping walls and rectifies boundaries to clean architectural room geometry.
 //
 
 import Foundation
@@ -13,16 +13,22 @@ import simd
 public final class PersistentWallTracker {
     
     public struct Config {
-        /// Maximum perpendicular distance (in meters) to consider two line segments on the same wall
-        public var maxCoplanarDistanceMeters: Double = 0.20
+        /// Maximum perpendicular distance (in meters) to fuse parallel wall segments
+        public var maxCoplanarDistanceMeters: Double = 0.35
         
         /// Maximum angular deviation (in radians) to consider two segments parallel
-        public var maxAngularDeviationRad: Double = 12.0 * (.pi / 180.0)
+        public var maxAngularDeviationRad: Double = 15.0 * (.pi / 180.0)
         
         /// Maximum longitudinal gap (in meters) to bridge and merge two segments along the same wall line
-        public var maxLongitudinalGapMeters: Double = 0.50
+        public var maxLongitudinalGapMeters: Double = 0.80
         
-        /// Minimum observations/hits before a wall is considered stable and rendered
+        /// Minimum wall length (in meters) to qualify as a real structural wall (filters out small clutter)
+        public var minStructuralWallLengthMeters: Double = 0.60
+        
+        /// Minimum height (in meters) to qualify as a wall rather than furniture (beds, tables)
+        public var minWallHeightMeters: Double = 1.40
+        
+        /// Minimum observations/hits before a wall is locked and rendered
         public var minHitCountForDisplay: Int = 2
         
         public init() {}
@@ -49,25 +55,29 @@ public final class PersistentWallTracker {
     
     // MARK: - Ingestion & Fusion Pipeline
     
-    /// Ingests candidate raw walls from ARKit and intelligently fuses them into persistent walls
-    public func ingestCandidateWalls(_ candidates: [WallSegment]) -> [WallSegment] {
+    /// Ingests candidate raw planes and filters out furniture/clutter
+    public func ingestCandidateWalls(_ candidates: [WallSegment], userPosition: Vector2D = .zero) -> [WallSegment] {
         for candidate in candidates {
-            fuseCandidate(candidate)
+            // Layer 1 Filter: Structural dimensions (reject small furniture)
+            guard candidate.length >= config.minStructuralWallLengthMeters,
+                  candidate.height >= config.minWallHeightMeters else {
+                continue
+            }
+            
+            fuseCandidate(candidate, userPos: userPosition)
         }
         
-        // Remove stale or low-confidence walls
+        // Remove stale transient detections
         let now = Date()
-        trackedWalls.removeAll { now.timeIntervalSince($0.lastUpdated) > 15.0 && $0.hitCount < 2 }
+        trackedWalls.removeAll { now.timeIntervalSince($0.lastUpdated) > 12.0 && $0.hitCount < 2 }
         
-        // Return only stable, validated walls
-        return trackedWalls
-            .filter { $0.hitCount >= config.minHitCountForDisplay || $0.wall.length >= 1.0 }
-            .map { $0.wall }
+        // Layer 2 Filter: Outermost Boundary Selection (Filter out inner furniture planes like wardrobes)
+        let filteredWalls = filterOutermostStructuralWalls(userPosition: userPosition)
+        
+        return filteredWalls
     }
     
-    private func fuseCandidate(_ candidate: WallSegment) {
-        guard candidate.length >= 0.25 else { return }
-        
+    private func fuseCandidate(_ candidate: WallSegment, userPos: Vector2D) {
         var bestMatchIndex: Int? = nil
         var bestScore: Double = Double.infinity
         
@@ -79,13 +89,13 @@ public final class PersistentWallTracker {
             let isParallel = angleDiff <= config.maxAngularDeviationRad || abs(angleDiff - .pi) <= config.maxAngularDeviationRad
             guard isParallel else { continue }
             
-            // 2. Perpendicular Distance Check: How far is candidate from the infinite line of the existing wall?
+            // 2. Perpendicular Distance Check: How far is candidate from the existing wall plane?
             let distStart = candidate.start.distanceToSegment(p1: existing.start - existing.direction * 10.0, p2: existing.end + existing.direction * 10.0)
             let distEnd = candidate.end.distanceToSegment(p1: existing.start - existing.direction * 10.0, p2: existing.end + existing.direction * 10.0)
             let perpDist = (distStart + distEnd) * 0.5
             guard perpDist <= config.maxCoplanarDistanceMeters else { continue }
             
-            // 3. Longitudinal Overlap / Proximity Check
+            // 3. Longitudinal Proximity Check
             let existingDir = existing.direction
             let projExStart = 0.0
             let projExEnd = existing.length
@@ -114,7 +124,11 @@ public final class PersistentWallTracker {
             let existing = matched.wall
             let existingDir = existing.direction
             
-            // Project all 4 endpoints onto existing wall axis
+            // Choose the outer plane (farthest from user camera) if they are slightly displaced (e.g. wardrobe vs wall)
+            let existingDistToUser = existing.midpoint.distance(to: userPos)
+            let candidateDistToUser = candidate.midpoint.distance(to: userPos)
+            let dominantWall = (candidateDistToUser > existingDistToUser) ? candidate : existing
+            
             let proj1 = 0.0
             let proj2 = existing.length
             let proj3 = (candidate.start - existing.start).dot(existingDir)
@@ -123,20 +137,65 @@ public final class PersistentWallTracker {
             let minProj = min(proj1, proj2, proj3, proj4)
             let maxProj = max(proj1, proj2, proj3, proj4)
             
-            let newStart = existing.start + (existingDir * minProj)
-            let newEnd = existing.start + (existingDir * maxProj)
+            let newStart = dominantWall.start + (existingDir * minProj)
+            let newEnd = dominantWall.start + (existingDir * maxProj)
             
             matched.wall.start = newStart
             matched.wall.end = newEnd
             matched.wall.height = max(existing.height, candidate.height)
-            matched.wall.thickness = (existing.thickness * Double(matched.hitCount) + candidate.thickness) / Double(matched.hitCount + 1)
+            matched.wall.thickness = max(0.15, (existing.thickness + candidate.thickness) * 0.5)
             matched.hitCount += 1
             matched.lastUpdated = Date()
             
             trackedWalls[matchIndex] = matched
         } else {
-            // ADD AS NEW CANDIDATE WALL
+            // ADD AS NEW STRUCTURAL CANDIDATE
             trackedWalls.append(TrackedWall(wall: candidate, hitCount: 1, lastUpdated: Date()))
         }
+    }
+    
+    // MARK: - Outermost Perimeter Filter
+    
+    /// Filters out inner duplicate planes (like closet doors 40cm in front of an actual wall)
+    private func filterOutermostStructuralWalls(userPosition: Vector2D) -> [WallSegment] {
+        var stableWalls = trackedWalls
+            .filter { $0.hitCount >= config.minHitCountForDisplay || $0.wall.length >= 1.2 }
+            .map { $0.wall }
+        
+        guard stableWalls.count > 1 else { return stableWalls }
+        
+        var result: [WallSegment] = []
+        
+        for wall in stableWalls {
+            var isInnerClutter = false
+            
+            // Check if there is another parallel wall farther away in the same direction
+            for other in stableWalls where other.id != wall.id {
+                let angleDiff = abs(wall.direction.angle(to: other.direction))
+                let isParallel = angleDiff <= config.maxAngularDeviationRad || abs(angleDiff - .pi) <= config.maxAngularDeviationRad
+                
+                if isParallel {
+                    let perpDist = wall.midpoint.distanceToSegment(p1: other.start - other.direction * 10.0, p2: other.end + other.direction * 10.0)
+                    
+                    // If within 0.70m of another parallel wall (e.g. wardrobe depth ~0.60m)
+                    if perpDist > 0.15 && perpDist <= 0.70 {
+                        let dist1 = wall.midpoint.distance(to: userPosition)
+                        let dist2 = other.midpoint.distance(to: userPosition)
+                        
+                        // If 'wall' is closer to user than 'other', 'wall' is an inner furniture clutter plane!
+                        if dist1 < dist2 {
+                            isInnerClutter = true
+                            break
+                        }
+                    }
+                }
+            }
+            
+            if !isInnerClutter {
+                result.append(wall)
+            }
+        }
+        
+        return result
     }
 }

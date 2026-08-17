@@ -24,11 +24,29 @@ public struct ScannerContainerView: View {
             VStack {
                 // Top Header Row
                 HStack(alignment: .top) {
-                    // Left: Compact Metric Island
-                    CompactMetricIsland(
-                        plan: engine.currentFloorPlan,
-                        wallCount: engine.currentFloorPlan.walls.count
-                    )
+                    VStack(alignment: .leading, spacing: 8) {
+                        // LiDAR Hardware Status
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(engine.isLiDARAvailable ? Color.green : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text(engine.isLiDARAvailable ? "LiDAR ACTIVE" : "OPTICAL")
+                                .font(.system(size: 10, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.75))
+                        .cornerRadius(8)
+                        
+                        // Compact Metric Island
+                        CompactMetricIsland(
+                            plan: engine.currentFloorPlan,
+                            wallCount: engine.currentFloorPlan.walls.count
+                        )
+                    }
                     
                     Spacer()
                     

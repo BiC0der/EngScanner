@@ -129,6 +129,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
         
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         let planeAnchors = anchors.compactMap { $0 as? ARPlaneAnchor }
+        let currentPos = self.userCameraPosition
         
         processingQueue.async { [weak self] in
             guard let self = self else { return }
@@ -138,12 +139,15 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 }
             }
             
-            // 1. Extract Candidate Wall Segments from Vertical Planes
+            // 1. Extract Candidate Wall Segments from Vertical Planes (filter out small surfaces)
             var candidateWalls: [WallSegment] = []
             for plane in planeAnchors where plane.alignment == .vertical {
                 let center = plane.center
                 let extent = plane.extent
                 let transform = plane.transform
+                
+                // Reject small planes (furniture, small cabinets, tables)
+                guard extent.x >= 0.50 && extent.y >= 1.20 else { continue }
                 
                 let halfWidth = Double(extent.x) * 0.5
                 let localP1 = SIMD4<Float>(center.x - Float(halfWidth), center.y, center.z, 1.0)
@@ -155,7 +159,7 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 let start2D = Vector2D(x: Double(worldP1.x), y: Double(-worldP1.z))
                 let end2D = Vector2D(x: Double(worldP2.x), y: Double(-worldP2.z))
                 
-                guard start2D.distance(to: end2D) >= 0.3 else { continue }
+                guard start2D.distance(to: end2D) >= 0.4 else { continue }
                 
                 let wall = WallSegment(
                     start: start2D,
@@ -168,10 +172,10 @@ public final class ARScanEngine: NSObject, ObservableObject {
                 candidateWalls.append(wall)
             }
             
-            // 2. Intelligent Spatial Deduplication & Tracking (Eliminates Stacked Lines)
-            let fusedWalls = self.wallTracker.ingestCandidateWalls(candidateWalls)
+            // 2. Intelligent Spatial Deduplication & Outermost Structural Filtering
+            let fusedWalls = self.wallTracker.ingestCandidateWalls(candidateWalls, userPosition: currentPos)
             
-            // 3. Orthogonal & Corner Snapping
+            // 3. Orthogonal Snapping to Rectangular Axes
             var cleanWalls = self.vectorSimplifier.snapOrthogonal(walls: fusedWalls)
             cleanWalls = self.vectorSimplifier.snapCornerIntersections(cleanWalls)
             

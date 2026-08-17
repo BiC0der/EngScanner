@@ -66,7 +66,8 @@ public struct CompactMetricIsland: View {
     }
     
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            // Area Metric
             HStack(spacing: 4) {
                 Image(systemName: "square.dashed")
                     .font(.system(size: 11, weight: .bold))
@@ -74,12 +75,14 @@ public struct CompactMetricIsland: View {
                 Text(String(format: "%.1f m²", plan.estimatedAreaSquareMeters))
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
+                    .lineLimit(1)
             }
             
             Circle()
-                .fill(Color.white.opacity(0.3))
+                .fill(Color.white.opacity(0.35))
                 .frame(width: 3, height: 3)
             
+            // Perimeter Metric
             HStack(spacing: 4) {
                 Image(systemName: "ruler")
                     .font(.system(size: 11, weight: .bold))
@@ -87,29 +90,33 @@ public struct CompactMetricIsland: View {
                 Text(String(format: "%.1f m", plan.totalPerimeterMeters))
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
+                    .lineLimit(1)
             }
             
             Circle()
-                .fill(Color.white.opacity(0.3))
+                .fill(Color.white.opacity(0.35))
                 .frame(width: 3, height: 3)
             
+            // Wall Count
             HStack(spacing: 4) {
                 Image(systemName: "square.3.layers.3d")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.green)
                 Text("\(wallCount) walls")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.white.opacity(0.95))
+                    .lineLimit(1)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(
             Capsule()
-                .fill(Color(white: 0.10).opacity(0.85))
+                .fill(Color(white: 0.10).opacity(0.88))
                 .overlay(
                     Capsule()
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
                 )
         )
         .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 3)

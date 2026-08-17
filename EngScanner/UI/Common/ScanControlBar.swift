@@ -17,16 +17,16 @@ public struct ScanControlBar: View {
     }
     
     public var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             // Reset Button
             Button(action: {
                 engine.resetScan()
             }) {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.85))
                     .frame(width: 44, height: 44)
-                    .background(Color(white: 0.15).opacity(0.85))
+                    .background(Color(white: 0.15).opacity(0.90))
                     .clipShape(Circle())
             }
             
@@ -48,14 +48,16 @@ public struct ScanControlBar: View {
                         .font(.system(size: 16, weight: .black))
                     Text(mainActionText)
                         .font(.system(size: 14, weight: .bold))
+                        .lineLimit(1)
                 }
                 .foregroundColor(.black)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 22)
                 .frame(height: 44)
                 .background(mainActionColor)
                 .clipShape(Capsule())
                 .shadow(color: mainActionColor.opacity(0.4), radius: 8, x: 0, y: 3)
             }
+            .fixedSize(horizontal: true, vertical: false)
             
             // Export Button
             Button(action: {
@@ -67,24 +69,27 @@ public struct ScanControlBar: View {
                         .font(.system(size: 14, weight: .bold))
                     Text("Export")
                         .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 16)
                 .frame(height: 44)
-                .background(Color.blue.opacity(0.9))
+                .background(Color.blue.opacity(0.92))
                 .clipShape(Capsule())
             }
+            .fixedSize(horizontal: true, vertical: false)
             .disabled(engine.currentFloorPlan.walls.isEmpty && engine.scanState == .idle)
             .opacity((engine.currentFloorPlan.walls.isEmpty && engine.scanState == .idle) ? 0.35 : 1.0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(
             Capsule()
-                .fill(Color(white: 0.08).opacity(0.80))
+                .fill(Color(white: 0.08).opacity(0.85))
                 .overlay(
                     Capsule()
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
                 )
         )
     }
